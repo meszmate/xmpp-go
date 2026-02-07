@@ -3,6 +3,8 @@ package plugin
 
 import (
 	"context"
+
+	"github.com/meszmate/xmpp-go/storage"
 )
 
 // Plugin is the interface that all XMPP plugins must implement.
@@ -38,4 +40,6 @@ type InitParams struct {
 	RemoteJID func() string
 	// Get retrieves another plugin by name.
 	Get func(name string) (Plugin, bool)
+	// Storage provides access to the pluggable storage layer. May be nil.
+	Storage storage.Storage
 }

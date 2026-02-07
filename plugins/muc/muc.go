@@ -8,6 +8,7 @@ import (
 
 	"github.com/meszmate/xmpp-go/internal/ns"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/storage"
 )
 
 const Name = "muc"
@@ -105,50 +106,94 @@ type Room struct {
 
 type Plugin struct {
 	mu     sync.RWMutex
-	rooms  map[string]*Room
+	rooms  map[string]*Room // in-memory fallback
+	store  storage.MUCRoomStore
 	params plugin.InitParams
 }
 
 func New() *Plugin {
-	return &Plugin{rooms: make(map[string]*Room)}
+	return &Plugin{}
 }
 
 func (p *Plugin) Name() string    { return Name }
 func (p *Plugin) Version() string { return "1.0.0" }
 func (p *Plugin) Initialize(_ context.Context, params plugin.InitParams) error {
 	p.params = params
+	if params.Storage != nil {
+		p.store = params.Storage.MUCRoomStore()
+	}
+	if p.store == nil {
+		p.rooms = make(map[string]*Room)
+	}
 	return nil
 }
 func (p *Plugin) Close() error           { return nil }
 func (p *Plugin) Dependencies() []string { return nil }
 
-func (p *Plugin) JoinRoom(roomJID, nick string) {
+func (p *Plugin) JoinRoom(ctx context.Context, roomJID, nick string) error {
+	if p.store != nil {
+		room, err := p.store.GetRoom(ctx, roomJID)
+		if err != nil {
+			if err == storage.ErrNotFound {
+				return p.store.CreateRoom(ctx, &storage.MUCRoom{RoomJID: roomJID, Name: nick})
+			}
+			return err
+		}
+		room.Name = nick
+		return p.store.UpdateRoom(ctx, room)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.rooms[roomJID] = &Room{JID: roomJID, Nick: nick, Joined: true}
+	return nil
 }
 
-func (p *Plugin) LeaveRoom(roomJID string) {
+func (p *Plugin) LeaveRoom(ctx context.Context, roomJID string) error {
+	if p.store != nil {
+		return p.store.DeleteRoom(ctx, roomJID)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.rooms, roomJID)
+	return nil
 }
 
-func (p *Plugin) GetRoom(roomJID string) (*Room, bool) {
+func (p *Plugin) GetRoom(ctx context.Context, roomJID string) (*Room, bool, error) {
+	if p.store != nil {
+		room, err := p.store.GetRoom(ctx, roomJID)
+		if err != nil {
+			if err == storage.ErrNotFound {
+				return nil, false, nil
+			}
+			return nil, false, err
+		}
+		return &Room{JID: room.RoomJID, Nick: room.Name, Joined: true}, true, nil
+	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	r, ok := p.rooms[roomJID]
-	return r, ok
+	return r, ok, nil
 }
 
-func (p *Plugin) Rooms() []*Room {
+func (p *Plugin) Rooms(ctx context.Context) ([]*Room, error) {
+	if p.store != nil {
+		mucRooms, err := p.store.ListRooms(ctx)
+		if err != nil {
+			return nil, err
+		}
+		rooms := make([]*Room, len(mucRooms))
+		for i, r := range mucRooms {
+			rooms[i] = &Room{JID: r.RoomJID, Nick: r.Name, Joined: true}
+		}
+		return rooms, nil
+	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	rooms := make([]*Room, 0, len(p.rooms))
 	for _, r := range p.rooms {
 		rooms = append(rooms, r)
 	}
-	return rooms
+	return rooms, nil
 }
 
 func init() {

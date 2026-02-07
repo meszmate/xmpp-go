@@ -36,6 +36,87 @@ func main() {
 }
 ```
 
+## Storage
+
+Configure a storage backend to persist user data, rosters, messages, and more. Without storage, all stateful plugins use in-memory fallbacks.
+
+### Memory (no persistence)
+
+```go
+import "github.com/meszmate/xmpp-go/storage/memory"
+
+xmpp.WithServerStorage(memory.New())
+```
+
+### File (JSON on disk)
+
+```go
+import "github.com/meszmate/xmpp-go/storage/file"
+
+xmpp.WithServerStorage(file.New("/var/lib/xmpp/data"))
+```
+
+### SQLite
+
+```go
+import "github.com/meszmate/xmpp-go/storage/sqlite"
+
+store, err := sqlite.New("xmpp.db")
+if err != nil {
+    log.Fatal(err)
+}
+xmpp.WithServerStorage(store)
+```
+
+### PostgreSQL
+
+```go
+import "github.com/meszmate/xmpp-go/storage/postgres"
+
+store, err := postgres.New("postgres://user:pass@localhost/xmpp?sslmode=disable")
+if err != nil {
+    log.Fatal(err)
+}
+xmpp.WithServerStorage(store)
+```
+
+### MySQL
+
+```go
+import "github.com/meszmate/xmpp-go/storage/mysql"
+
+store, err := mysql.New("user:pass@tcp(localhost:3306)/xmpp")
+if err != nil {
+    log.Fatal(err)
+}
+xmpp.WithServerStorage(store)
+```
+
+### MongoDB
+
+```go
+import "github.com/meszmate/xmpp-go/storage/mongodb"
+
+store, err := mongodb.New("mongodb://localhost:27017", "xmpp")
+if err != nil {
+    log.Fatal(err)
+}
+xmpp.WithServerStorage(store)
+```
+
+### Redis
+
+```go
+import "github.com/meszmate/xmpp-go/storage/redis"
+
+store := redis.New(&redis.Options{
+    Addr: "localhost:6379",
+})
+xmpp.WithServerStorage(store)
+```
+
+When a storage backend with a `UserStore` is configured and no explicit `WithServerAuth` is set, the server automatically derives authentication from the storage layer.
+
 ## Authentication
 
 Provide a custom authentication handler:
@@ -46,6 +127,8 @@ xmpp.WithServerAuth(func(username, password string) (bool, error) {
     return true, nil
 })
 ```
+
+When using a storage backend with a `UserStore`, you can skip `WithServerAuth` -- the server will authenticate against the stored user accounts automatically.
 
 ## Session Handling
 

@@ -8,11 +8,23 @@ Every plugin implements the `plugin.Plugin` interface:
 type Plugin interface {
     Name() string
     Version() string
-    Initialize(ctx context.Context, session *xmpp.Session) error
+    Initialize(ctx context.Context, params plugin.InitParams) error
     Close() error
-    StreamFeatures() []xmpp.StreamFeature
-    MuxOptions() []mux.Option
     Dependencies() []string
+}
+```
+
+`InitParams` provides everything a plugin needs:
+
+```go
+type InitParams struct {
+    SendRaw    func(ctx context.Context, data []byte) error
+    SendElement func(ctx context.Context, v any) error
+    State      func() uint32
+    LocalJID   func() string
+    RemoteJID  func() string
+    Get        func(name string) (Plugin, bool)
+    Storage    storage.Storage  // may be nil
 }
 ```
 
@@ -24,12 +36,11 @@ package myplugin
 import (
     "context"
 
-    xmpp "github.com/meszmate/xmpp-go"
     "github.com/meszmate/xmpp-go/plugin"
 )
 
 type MyPlugin struct {
-    session *xmpp.Session
+    params plugin.InitParams
 }
 
 func New() *MyPlugin {
@@ -39,14 +50,12 @@ func New() *MyPlugin {
 func (p *MyPlugin) Name() string    { return "my-plugin" }
 func (p *MyPlugin) Version() string { return "1.0.0" }
 
-func (p *MyPlugin) Initialize(ctx context.Context, session *xmpp.Session) error {
-    p.session = session
+func (p *MyPlugin) Initialize(ctx context.Context, params plugin.InitParams) error {
+    p.params = params
     return nil
 }
 
 func (p *MyPlugin) Close() error { return nil }
-func (p *MyPlugin) StreamFeatures() []xmpp.StreamFeature { return nil }
-func (p *MyPlugin) MuxOptions() []xmpp.MuxOption { return nil }
 func (p *MyPlugin) Dependencies() []string { return nil }
 ```
 
@@ -58,6 +67,21 @@ Return the names of plugins your plugin depends on from `Dependencies()`. The pl
 
 Plugins can contribute stream features that are negotiated during connection setup. Return them from `StreamFeatures()`.
 
-## Stanza Handlers
+## Using Storage in Plugins
 
-Return `MuxOption` values from `MuxOptions()` to register stanza handlers with the session's multiplexer.
+Plugins receive the configured storage backend through `params.Storage`. The recommended pattern is to check for the relevant sub-store during initialization and fall back to an in-memory data structure when storage is not configured:
+
+```go
+func (p *MyPlugin) Initialize(ctx context.Context, params plugin.InitParams) error {
+    p.params = params
+    if params.Storage != nil {
+        p.store = params.Storage.VCardStore()
+    }
+    if p.store == nil {
+        p.vcards = make(map[string][]byte) // in-memory fallback
+    }
+    return nil
+}
+```
+
+All built-in stateful plugins (roster, blocking, vcard, MUC, MAM, PubSub, bookmarks) follow this pattern. Transient plugins (presence, disco, stream management, CSI, carbons, caps) do not use storage.

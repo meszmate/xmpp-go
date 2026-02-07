@@ -7,6 +7,7 @@ import (
 
 	"github.com/meszmate/xmpp-go/internal/ns"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/storage"
 )
 
 const Name = "mam"
@@ -55,6 +56,7 @@ type Info struct {
 }
 
 type Plugin struct {
+	store  storage.MAMStore
 	params plugin.InitParams
 }
 
@@ -64,9 +66,28 @@ func (p *Plugin) Name() string    { return Name }
 func (p *Plugin) Version() string { return "1.0.0" }
 func (p *Plugin) Initialize(_ context.Context, params plugin.InitParams) error {
 	p.params = params
+	if params.Storage != nil {
+		p.store = params.Storage.MAMStore()
+	}
 	return nil
 }
 func (p *Plugin) Close() error           { return nil }
 func (p *Plugin) Dependencies() []string { return nil }
+
+// StoreMessage archives a message. Returns nil if no store is configured.
+func (p *Plugin) StoreMessage(ctx context.Context, msg *storage.ArchivedMessage) error {
+	if p.store == nil {
+		return nil
+	}
+	return p.store.ArchiveMessage(ctx, msg)
+}
+
+// QueryMessages queries the message archive. Returns nil result if no store is configured.
+func (p *Plugin) QueryMessages(ctx context.Context, query *storage.MAMQuery) (*storage.MAMResult, error) {
+	if p.store == nil {
+		return &storage.MAMResult{Complete: true}, nil
+	}
+	return p.store.QueryMessages(ctx, query)
+}
 
 func init() { _ = ns.MAM }

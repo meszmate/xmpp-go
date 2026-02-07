@@ -11,6 +11,7 @@
 //   - Client/Server: High-level APIs for building XMPP clients and servers
 //   - Plugin System: Extensible architecture for XEP implementations
 //   - Plugins: Ready-to-use implementations of 50+ XEPs
+//   - Storage: Pluggable backends (Memory, File, SQLite, PostgreSQL, MySQL, MongoDB, Redis)
 //
 // Basic client usage:
 //
