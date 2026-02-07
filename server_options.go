@@ -1,5 +1,7 @@
 package xmpp
 
+import "github.com/meszmate/xmpp-go/storage"
+
 // serverOptions holds server configuration.
 type serverOptions struct {
 	addr           string
@@ -7,6 +9,7 @@ type serverOptions struct {
 	tlsKey         string
 	authFunc       AuthFunc
 	sessionHandler SessionHandlerFunc
+	storage        storage.Storage
 }
 
 // ServerOption configures a Server.
@@ -44,5 +47,12 @@ func WithServerAuth(f AuthFunc) ServerOption {
 func WithServerSessionHandler(f SessionHandlerFunc) ServerOption {
 	return serverOptionFunc(func(o *serverOptions) {
 		o.sessionHandler = f
+	})
+}
+
+// WithServerStorage sets the pluggable storage backend.
+func WithServerStorage(s storage.Storage) ServerOption {
+	return serverOptionFunc(func(o *serverOptions) {
+		o.storage = s
 	})
 }

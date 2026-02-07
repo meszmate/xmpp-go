@@ -37,6 +37,20 @@ func NewServer(domain string, opts ...ServerOption) (*Server, error) {
 
 // ListenAndServe starts listening for XMPP connections.
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	if st := s.opts.storage; st != nil {
+		if err := st.Init(ctx); err != nil {
+			return err
+		}
+		// Auto-derive AuthFunc from UserStore if no explicit authFunc is set.
+		if s.opts.authFunc == nil {
+			if us := st.UserStore(); us != nil {
+				s.opts.authFunc = func(username, password string) (bool, error) {
+					return us.Authenticate(ctx, username, password)
+				}
+			}
+		}
+	}
+
 	addr := s.opts.addr
 	if addr == "" {
 		addr = ":5222"
@@ -140,6 +154,12 @@ func (s *Server) Close() error {
 
 	for _, session := range s.sessions {
 		if err := session.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	if s.opts.storage != nil {
+		if err := s.opts.storage.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
