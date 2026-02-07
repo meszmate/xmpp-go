@@ -7,6 +7,7 @@ import (
 
 	"github.com/meszmate/xmpp-go/internal/ns"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/storage"
 )
 
 const Name = "vcard"
@@ -49,12 +50,12 @@ type Org struct {
 
 // VCard4 represents a vCard4 (XEP-0292).
 type VCard4 struct {
-	XMLName xml.Name `xml:"urn:ietf:params:xml:ns:vcard-4.0 vcard"`
-	FN      *Text    `xml:"fn,omitempty"`
-	N       *VCard4N `xml:"n,omitempty"`
-	Email   *Text    `xml:"email,omitempty"`
-	URL     *URI     `xml:"url,omitempty"`
-	Nickname *Text   `xml:"nickname,omitempty"`
+	XMLName  xml.Name `xml:"urn:ietf:params:xml:ns:vcard-4.0 vcard"`
+	FN       *Text    `xml:"fn,omitempty"`
+	N        *VCard4N `xml:"n,omitempty"`
+	Email    *Text    `xml:"email,omitempty"`
+	URL      *URI     `xml:"url,omitempty"`
+	Nickname *Text    `xml:"nickname,omitempty"`
 }
 
 type VCard4N struct {
@@ -71,6 +72,7 @@ type URI struct {
 }
 
 type Plugin struct {
+	store  storage.VCardStore
 	params plugin.InitParams
 }
 
@@ -80,10 +82,37 @@ func (p *Plugin) Name() string    { return Name }
 func (p *Plugin) Version() string { return "1.0.0" }
 func (p *Plugin) Initialize(_ context.Context, params plugin.InitParams) error {
 	p.params = params
+	if params.Storage != nil {
+		p.store = params.Storage.VCardStore()
+	}
 	return nil
 }
 func (p *Plugin) Close() error           { return nil }
 func (p *Plugin) Dependencies() []string { return nil }
+
+// GetVCard retrieves the vCard for the local user. Returns nil if no store is configured.
+func (p *Plugin) GetVCard(ctx context.Context, userJID string) ([]byte, error) {
+	if p.store == nil {
+		return nil, nil
+	}
+	return p.store.GetVCard(ctx, userJID)
+}
+
+// SetVCard stores the vCard for the local user.
+func (p *Plugin) SetVCard(ctx context.Context, userJID string, data []byte) error {
+	if p.store == nil {
+		return nil
+	}
+	return p.store.SetVCard(ctx, userJID, data)
+}
+
+// DeleteVCard removes the vCard for the local user.
+func (p *Plugin) DeleteVCard(ctx context.Context, userJID string) error {
+	if p.store == nil {
+		return nil
+	}
+	return p.store.DeleteVCard(ctx, userJID)
+}
 
 func init() {
 	_ = ns.VCard

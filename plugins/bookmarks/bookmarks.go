@@ -7,6 +7,7 @@ import (
 
 	"github.com/meszmate/xmpp-go/internal/ns"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/storage"
 )
 
 const Name = "bookmarks"
@@ -29,6 +30,7 @@ type Extension struct {
 }
 
 type Plugin struct {
+	store  storage.BookmarkStore
 	params plugin.InitParams
 }
 
@@ -38,9 +40,44 @@ func (p *Plugin) Name() string    { return Name }
 func (p *Plugin) Version() string { return "1.0.0" }
 func (p *Plugin) Initialize(_ context.Context, params plugin.InitParams) error {
 	p.params = params
+	if params.Storage != nil {
+		p.store = params.Storage.BookmarkStore()
+	}
 	return nil
 }
 func (p *Plugin) Close() error           { return nil }
 func (p *Plugin) Dependencies() []string { return nil }
+
+// Set adds or updates a bookmark. Returns nil if no store is configured.
+func (p *Plugin) Set(ctx context.Context, bm *storage.Bookmark) error {
+	if p.store == nil {
+		return nil
+	}
+	return p.store.SetBookmark(ctx, bm)
+}
+
+// Get retrieves a bookmark. Returns nil if no store is configured.
+func (p *Plugin) Get(ctx context.Context, userJID, roomJID string) (*storage.Bookmark, error) {
+	if p.store == nil {
+		return nil, nil
+	}
+	return p.store.GetBookmark(ctx, userJID, roomJID)
+}
+
+// List retrieves all bookmarks for a user. Returns nil if no store is configured.
+func (p *Plugin) List(ctx context.Context, userJID string) ([]*storage.Bookmark, error) {
+	if p.store == nil {
+		return nil, nil
+	}
+	return p.store.GetBookmarks(ctx, userJID)
+}
+
+// Delete removes a bookmark. Returns nil if no store is configured.
+func (p *Plugin) Delete(ctx context.Context, userJID, roomJID string) error {
+	if p.store == nil {
+		return nil
+	}
+	return p.store.DeleteBookmark(ctx, userJID, roomJID)
+}
 
 func init() { _ = ns.Bookmarks }
