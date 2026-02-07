@@ -12,6 +12,7 @@ A comprehensive, production-grade XMPP library for Go supporting both client and
 - STARTTLS with certificate verification
 - Stanza multiplexer with middleware support
 - DNS SRV and host-meta resolution
+- Pluggable storage backends: Memory, File, SQLite, PostgreSQL, MySQL, MongoDB, Redis
 
 ## Installation
 
@@ -179,12 +180,47 @@ func main() {
 - [x] XEP-0440: SASL Channel-Binding Type Capability
 - [x] XEP-0484: FAST
 
+## Storage Backends
+
+xmpp-go includes a pluggable storage layer. All stateful plugins (roster, blocking, vcard, MUC, MAM, PubSub, bookmarks) automatically use the configured backend, falling back to in-memory storage when none is set.
+
+| Backend | Package | External Dependency |
+|---------|---------|-------------------|
+| Memory | `storage/memory` | None |
+| File (JSON) | `storage/file` | None |
+| SQLite | `storage/sqlite` | `github.com/mattn/go-sqlite3` |
+| PostgreSQL | `storage/postgres` | `github.com/jackc/pgx/v5` |
+| MySQL | `storage/mysql` | `github.com/go-sql-driver/mysql` |
+| MongoDB | `storage/mongodb` | `go.mongodb.org/mongo-driver/v2` |
+| Redis | `storage/redis` | `github.com/redis/go-redis/v9` |
+
+```go
+import (
+    xmpp "github.com/meszmate/xmpp-go"
+    "github.com/meszmate/xmpp-go/storage/memory"
+)
+
+server, _ := xmpp.NewServer("example.com",
+    xmpp.WithServerStorage(memory.New()),
+    // ...
+)
+```
+
+Backends with external dependencies live in separate Go modules so the main module stays dependency-free. Install only what you need:
+
+```bash
+go get github.com/meszmate/xmpp-go/storage/postgres
+```
+
+See the [Storage Guide](docs/storage.md) for full details.
+
 ## Documentation
 
 - [Architecture Overview](docs/architecture.md)
 - [Plugin Development Guide](docs/plugins.md)
 - [Client Usage Guide](docs/client-guide.md)
 - [Server Usage Guide](docs/server-guide.md)
+- [Storage Guide](docs/storage.md)
 
 ## License
 
