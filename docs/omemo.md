@@ -159,91 +159,48 @@ manager := omemo.NewManager(store)
 import (
     "encoding/base64"
     "encoding/xml"
-    "fmt"
 
     "github.com/meszmate/xmpp-go/crypto/omemo"
     omemoplugin "github.com/meszmate/xmpp-go/plugins/omemo"
-    "github.com/meszmate/xmpp-go/plugins/pubsub"
-    "github.com/meszmate/xmpp-go/stanza"
 )
 
 // Generate key material (private keys stay in the local store)
 bundle, _ := manager.GenerateBundle(25)
 
 // Publish device list to PEP
-deviceListXML, _ := xml.Marshal(&omemoplugin.DeviceList{
-    Devices: []omemoplugin.Device{{ID: myDeviceID}},
-})
-iq := &stanza.IQPayload{
-    IQ: stanza.IQ{Header: stanza.Header{Type: "set", ID: stanza.GenerateID()}},
-    Payload: &pubsub.PubSub{
-        Publish: &pubsub.Publish{
-            Node:  omemoplugin.NodeDeviceList,
-            Items: []pubsub.PubItem{{ID: "current", Payload: deviceListXML}},
-        },
-    },
-}
+iq := omemoplugin.PublishDeviceListIQ(myDeviceID)
 client.Send(ctx, &iq.IQ)
 
 // Publish bundle (public keys only) to PEP
 bundleXML, _ := xml.Marshal(&omemoplugin.Bundle{
-    SPK:  omemoplugin.SPK{ID: bundle.SignedPreKeyID, Value: base64.StdEncoding.EncodeToString(bundle.SignedPreKey)},
-    SPKS: base64.StdEncoding.EncodeToString(bundle.SignedPreKeySignature),
-    IK:   base64.StdEncoding.EncodeToString(bundle.IdentityKey),
+    SPK:     omemoplugin.SPK{ID: bundle.SignedPreKeyID, Value: base64.StdEncoding.EncodeToString(bundle.SignedPreKey)},
+    SPKS:    base64.StdEncoding.EncodeToString(bundle.SignedPreKeySignature),
+    IK:      base64.StdEncoding.EncodeToString(bundle.IdentityKey),
     Prekeys: toXMLPreKeys(bundle.PreKeys),
 })
-iq2 := &stanza.IQPayload{
-    IQ: stanza.IQ{Header: stanza.Header{Type: "set", ID: stanza.GenerateID()}},
-    Payload: &pubsub.PubSub{
-        Publish: &pubsub.Publish{
-            Node:  omemoplugin.NodeBundles,
-            Items: []pubsub.PubItem{{ID: fmt.Sprintf("%d", myDeviceID), Payload: bundleXML}},
-        },
-    },
-}
+iq2 := omemoplugin.PublishBundleIQ(myDeviceID, bundleXML)
 client.Send(ctx, &iq2.IQ)
 ```
 
 ### Fetch a Contact's Devices and Bundles
 
 ```go
-// Fetch device list from server (IQ get)
-iq := &stanza.IQPayload{
-    IQ: stanza.IQ{
-        Header: stanza.Header{
-            Type: "get",
-            ID:   stanza.GenerateID(),
-            To:   jid.MustParse("bob@example.com"),
-        },
-    },
-    Payload: &pubsub.PubSub{
-        Items: &pubsub.Items{Node: omemoplugin.NodeDeviceList},
-    },
-}
+// Fetch device list from server
+bob := jid.MustParse("bob@example.com")
+iq := omemoplugin.FetchDeviceListIQ(bob)
 client.Send(ctx, &iq.IQ)
 // Parse the IQ result -> omemoplugin.DeviceList -> list of device IDs
 
 // Cache devices locally via the plugin
 omemoPlugin.SetDevices("bob@example.com", devices)
 
-// For each device, fetch the bundle
-for _, dev := range omemoPlugin.GetDevices("bob@example.com") {
-    iq := &stanza.IQPayload{
-        IQ: stanza.IQ{
-            Header: stanza.Header{
-                Type: "get",
-                ID:   stanza.GenerateID(),
-                To:   jid.MustParse("bob@example.com"),
-            },
-        },
-        Payload: &pubsub.PubSub{
-            Items: &pubsub.Items{Node: omemoplugin.NodeBundles},
-            // The server returns items; filter by device ID
-        },
-    }
-    client.Send(ctx, &iq.IQ)
-    // Parse the IQ result -> omemoplugin.Bundle -> convert to crypto/omemo.Bundle
+// Fetch all bundles for Bob's devices
+iq2 := omemoplugin.FetchBundlesIQ(bob)
+client.Send(ctx, &iq2.IQ)
+// Parse the IQ result -> []omemoplugin.Bundle, one per device
 
+for _, dev := range omemoPlugin.GetDevices("bob@example.com") {
+    // Convert XML bundle to crypto bundle and process it
     cryptoBundle := parseBundleToCrypto(xmlBundle)
     addr := omemo.Address{JID: "bob@example.com", DeviceID: dev.ID}
     manager.ProcessBundle(addr, cryptoBundle)
