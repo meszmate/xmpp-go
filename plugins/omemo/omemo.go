@@ -4,10 +4,14 @@ package omemo
 import (
 	"context"
 	"encoding/xml"
+	"fmt"
 	"sync"
 
 	"github.com/meszmate/xmpp-go/internal/ns"
+	"github.com/meszmate/xmpp-go/jid"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/plugins/pubsub"
+	"github.com/meszmate/xmpp-go/stanza"
 )
 
 const Name = "omemo"
@@ -126,6 +130,58 @@ func NewEME() EME {
 	return EME{
 		Namespace: ns.OMEMO,
 		Name:      "OMEMO",
+	}
+}
+
+// PublishDeviceListIQ returns an IQ that publishes the device list to PEP.
+func PublishDeviceListIQ(devices ...uint32) *stanza.IQPayload {
+	devs := make([]Device, len(devices))
+	for i, id := range devices {
+		devs[i] = Device{ID: id}
+	}
+	payload, _ := xml.Marshal(&DeviceList{Devices: devs})
+	return &stanza.IQPayload{
+		IQ: stanza.IQ{Header: stanza.Header{Type: "set", ID: stanza.GenerateID()}},
+		Payload: &pubsub.PubSub{
+			Publish: &pubsub.Publish{
+				Node:  NodeDeviceList,
+				Items: []pubsub.PubItem{{ID: "current", Payload: payload}},
+			},
+		},
+	}
+}
+
+// PublishBundleIQ returns an IQ that publishes a key bundle to PEP.
+// The bundleXML should be the xml.Marshal output of a Bundle.
+func PublishBundleIQ(deviceID uint32, bundleXML []byte) *stanza.IQPayload {
+	return &stanza.IQPayload{
+		IQ: stanza.IQ{Header: stanza.Header{Type: "set", ID: stanza.GenerateID()}},
+		Payload: &pubsub.PubSub{
+			Publish: &pubsub.Publish{
+				Node:  NodeBundles,
+				Items: []pubsub.PubItem{{ID: fmt.Sprintf("%d", deviceID), Payload: bundleXML}},
+			},
+		},
+	}
+}
+
+// FetchDeviceListIQ returns an IQ that fetches a user's OMEMO device list.
+func FetchDeviceListIQ(target jid.JID) *stanza.IQPayload {
+	return &stanza.IQPayload{
+		IQ: stanza.IQ{Header: stanza.Header{Type: "get", ID: stanza.GenerateID(), To: target}},
+		Payload: &pubsub.PubSub{
+			Items: &pubsub.Items{Node: NodeDeviceList},
+		},
+	}
+}
+
+// FetchBundlesIQ returns an IQ that fetches OMEMO bundles for a user.
+func FetchBundlesIQ(target jid.JID) *stanza.IQPayload {
+	return &stanza.IQPayload{
+		IQ: stanza.IQ{Header: stanza.Header{Type: "get", ID: stanza.GenerateID(), To: target}},
+		Payload: &pubsub.PubSub{
+			Items: &pubsub.Items{Node: NodeBundles},
+		},
 	}
 }
 
