@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 
 	"github.com/meszmate/xmpp-go/dial"
+	"github.com/meszmate/xmpp-go/plugin"
 )
 
 type clientOptions struct {
@@ -12,6 +13,7 @@ type clientOptions struct {
 	handler   Handler
 	directTLS bool
 	noTLS     bool
+	plugins   []plugin.Plugin
 }
 
 // ClientOption configures a Client.
@@ -55,5 +57,12 @@ func WithDirectTLS() ClientOption {
 func WithNoTLS() ClientOption {
 	return clientOptionFunc(func(o *clientOptions) {
 		o.noTLS = true
+	})
+}
+
+// WithPlugins registers plugins to be initialized on connect.
+func WithPlugins(plugins ...plugin.Plugin) ClientOption {
+	return clientOptionFunc(func(o *clientOptions) {
+		o.plugins = append(o.plugins, plugins...)
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/meszmate/xmpp-go/jid"
+	"github.com/meszmate/xmpp-go/plugin"
 	"github.com/meszmate/xmpp-go/transport"
 )
 
@@ -16,6 +17,7 @@ type Server struct {
 	domain   string
 	listener net.Listener
 	sessions map[string]*Session
+	plugins  *plugin.Manager
 	opts     serverOptions
 	closed   chan struct{}
 }
@@ -49,6 +51,25 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 				}
 			}
 		}
+	}
+
+	if len(s.opts.plugins) > 0 {
+		mgr := plugin.NewManager()
+		for _, p := range s.opts.plugins {
+			if err := mgr.Register(p); err != nil {
+				return err
+			}
+		}
+		params := plugin.InitParams{
+			State:    func() uint32 { return uint32(StateServer) },
+			LocalJID: func() string { return s.domain },
+			RemoteJID: func() string { return "" },
+			Storage:  s.opts.storage,
+		}
+		if err := mgr.Initialize(ctx, params); err != nil {
+			return err
+		}
+		s.plugins = mgr
 	}
 
 	addr := s.opts.addr
@@ -158,6 +179,13 @@ func (s *Server) Close() error {
 		}
 	}
 
+	if s.plugins != nil {
+		if err := s.plugins.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		s.plugins = nil
+	}
+
 	if s.opts.storage != nil {
 		if err := s.opts.storage.Close(); err != nil && firstErr == nil {
 			firstErr = err
@@ -165,6 +193,18 @@ func (s *Server) Close() error {
 	}
 
 	return firstErr
+}
+
+// Plugin returns a registered plugin by name.
+func (s *Server) Plugin(name string) (plugin.Plugin, bool) {
+	s.mu.Lock()
+	mgr := s.plugins
+	s.mu.Unlock()
+
+	if mgr == nil {
+		return nil, false
+	}
+	return mgr.Get(name)
 }
 
 // Domain returns the server domain.

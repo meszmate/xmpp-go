@@ -1,12 +1,14 @@
 package xmpp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
 
 	"github.com/meszmate/xmpp-go/dial"
 	"github.com/meszmate/xmpp-go/jid"
+	"github.com/meszmate/xmpp-go/plugin"
 	"github.com/meszmate/xmpp-go/stanza"
 )
 
@@ -16,6 +18,7 @@ type Client struct {
 	addr     jid.JID
 	password string
 	session  *Session
+	plugins  *plugin.Manager
 	dialer   *dial.Dialer
 	opts     clientOptions
 	handler  Handler
@@ -57,6 +60,32 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 	c.session = session
 
+	if len(c.opts.plugins) > 0 {
+		mgr := plugin.NewManager()
+		for _, p := range c.opts.plugins {
+			if err := mgr.Register(p); err != nil {
+				session.Close()
+				c.session = nil
+				return err
+			}
+		}
+		params := plugin.InitParams{
+			SendRaw: func(ctx context.Context, data []byte) error {
+				return session.SendRaw(ctx, bytes.NewReader(data))
+			},
+			SendElement: session.SendElement,
+			State:       func() uint32 { return uint32(session.State()) },
+			LocalJID:    func() string { return session.LocalAddr().String() },
+			RemoteJID:   func() string { return session.RemoteAddr().String() },
+		}
+		if err := mgr.Initialize(ctx, params); err != nil {
+			session.Close()
+			c.session = nil
+			return err
+		}
+		c.plugins = mgr
+	}
+
 	return nil
 }
 
@@ -84,10 +113,32 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.session != nil {
-		return c.session.Close()
+	var firstErr error
+	if c.plugins != nil {
+		if err := c.plugins.Close(); err != nil {
+			firstErr = err
+		}
+		c.plugins = nil
 	}
-	return nil
+	if c.session != nil {
+		if err := c.session.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		c.session = nil
+	}
+	return firstErr
+}
+
+// Plugin returns a registered plugin by name.
+func (c *Client) Plugin(name string) (plugin.Plugin, bool) {
+	c.mu.Lock()
+	mgr := c.plugins
+	c.mu.Unlock()
+
+	if mgr == nil {
+		return nil, false
+	}
+	return mgr.Get(name)
 }
 
 // JID returns the client's JID.

@@ -1,6 +1,9 @@
 package xmpp
 
-import "github.com/meszmate/xmpp-go/storage"
+import (
+	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/storage"
+)
 
 // serverOptions holds server configuration.
 type serverOptions struct {
@@ -10,6 +13,7 @@ type serverOptions struct {
 	authFunc       AuthFunc
 	sessionHandler SessionHandlerFunc
 	storage        storage.Storage
+	plugins        []plugin.Plugin
 }
 
 // ServerOption configures a Server.
@@ -54,5 +58,12 @@ func WithServerSessionHandler(f SessionHandlerFunc) ServerOption {
 func WithServerStorage(s storage.Storage) ServerOption {
 	return serverOptionFunc(func(o *serverOptions) {
 		o.storage = s
+	})
+}
+
+// WithServerPlugins registers plugins to be initialized on serve.
+func WithServerPlugins(plugins ...plugin.Plugin) ServerOption {
+	return serverOptionFunc(func(o *serverOptions) {
+		o.plugins = append(o.plugins, plugins...)
 	})
 }
