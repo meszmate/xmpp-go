@@ -137,7 +137,7 @@ func main() {
 
 ### Encryption
 - [x] XEP-0380: Explicit Message Encryption
-- [x] XEP-0384: OMEMO Encryption
+- [x] XEP-0384: OMEMO Encryption (with [Signal protocol crypto module](crypto/omemo/))
 - [x] XEP-0454: OMEMO Media Sharing
 
 ### Jingle (Voice/Video)
@@ -214,6 +214,41 @@ go get github.com/meszmate/xmpp-go/storage/postgres
 
 See the [Storage Guide](docs/storage.md) for full details.
 
+## OMEMO Encryption
+
+xmpp-go includes a standalone Signal protocol implementation at [`crypto/omemo/`](crypto/omemo/) for OMEMO v2 (XEP-0384) end-to-end encryption. It is a separate Go module with no dependency on the main library.
+
+```bash
+go get github.com/meszmate/xmpp-go/crypto/omemo
+```
+
+OMEMO works across both the server and client:
+
+- **Server side**: The PubSub plugin + storage backend persists device lists and bundles (public key material only). No OMEMO-specific configuration needed -- it uses standard PEP nodes.
+- **Client side**: The `crypto/omemo` package handles X3DH key agreement, Double Ratchet encryption, and AES-256-GCM. Private keys and session state are stored locally via the `omemo.Store` interface.
+
+```go
+import "github.com/meszmate/xmpp-go/crypto/omemo"
+
+// Client-side crypto store (private keys, sessions, trust)
+store := omemo.NewMemoryStore(myDeviceID)
+manager := omemo.NewManager(store)
+
+// Generate bundle (private keys stay local, public parts go to server via PEP)
+bundle, _ := manager.GenerateBundle(25)
+
+// After fetching a contact's bundle from the server:
+manager.ProcessBundle(addr, remoteBundleParsedFromXML)
+
+// Encrypt for recipient devices
+encMsg, _ := manager.Encrypt([]byte("Hello!"), recipientAddresses...)
+
+// Decrypt incoming messages
+plaintext, _ := manager.Decrypt(senderAddr, incomingMsg)
+```
+
+See the [OMEMO Guide](docs/omemo.md) for the full server/client architecture, step-by-step setup, and conversion between XML and crypto types.
+
 ## Documentation
 
 - [Architecture Overview](docs/architecture.md)
@@ -221,6 +256,7 @@ See the [Storage Guide](docs/storage.md) for full details.
 - [Client Usage Guide](docs/client-guide.md)
 - [Server Usage Guide](docs/server-guide.md)
 - [Storage Guide](docs/storage.md)
+- [OMEMO Encryption Guide](docs/omemo.md)
 
 ## License
 
