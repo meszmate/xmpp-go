@@ -32,16 +32,16 @@ type Store struct {
 	offlineMsgs map[string][]*storage.OfflineMessage // userJID -> messages
 
 	// MAM
-	mamMessages map[string][]*storage.ArchivedMessage // userJID -> messages
+	mamMessages  map[string][]*storage.ArchivedMessage // userJID -> messages
 	mamIDCounter int64
 
 	// MUC rooms
-	mucRooms        map[string]*storage.MUCRoom                    // roomJID -> room
-	mucAffiliations map[string]map[string]*storage.MUCAffiliation  // roomJID -> userJID -> aff
+	mucRooms        map[string]*storage.MUCRoom                   // roomJID -> room
+	mucAffiliations map[string]map[string]*storage.MUCAffiliation // roomJID -> userJID -> aff
 
 	// PubSub
-	pubsubNodes         map[string]map[string]*storage.PubSubNode            // host -> nodeID -> node
-	pubsubItems         map[string]map[string]map[string]*storage.PubSubItem // host -> nodeID -> itemID -> item
+	pubsubNodes         map[string]map[string]*storage.PubSubNode                    // host -> nodeID -> node
+	pubsubItems         map[string]map[string]map[string]*storage.PubSubItem         // host -> nodeID -> itemID -> item
 	pubsubSubscriptions map[string]map[string]map[string]*storage.PubSubSubscription // host -> nodeID -> jid -> sub
 
 	// Bookmarks
@@ -50,13 +50,20 @@ type Store struct {
 
 // New creates a new in-memory store.
 func New() *Store {
-	return &Store{}
+	s := &Store{}
+	s.initLocked()
+	return s
 }
 
 func (s *Store) Init(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.initLocked()
+	return nil
+}
+
+func (s *Store) initLocked() {
 	s.users = make(map[string]*storage.User)
 	s.rosterItems = make(map[string]map[string]*storage.RosterItem)
 	s.rosterVersions = make(map[string]string)
@@ -70,7 +77,6 @@ func (s *Store) Init(_ context.Context) error {
 	s.pubsubItems = make(map[string]map[string]map[string]*storage.PubSubItem)
 	s.pubsubSubscriptions = make(map[string]map[string]map[string]*storage.PubSubSubscription)
 	s.bookmarks = make(map[string]map[string]*storage.Bookmark)
-	return nil
 }
 
 func (s *Store) Close() error { return nil }
