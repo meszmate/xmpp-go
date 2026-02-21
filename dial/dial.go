@@ -54,15 +54,20 @@ func (d *Dialer) Dial(ctx context.Context, domain string) (*transport.TCP, error
 
 	// Try each record in order
 	var lastErr error
+	netDialer := &net.Dialer{Timeout: d.Timeout}
 	for _, rec := range records {
 		addr := net.JoinHostPort(rec.Target, fmt.Sprintf("%d", rec.Port))
 
 		var conn net.Conn
 		if d.DirectTLS {
 			tlsCfg := d.tlsConfig(domain)
-			conn, lastErr = tls.DialWithDialer(&net.Dialer{}, "tcp", addr, tlsCfg)
+			tlsDialer := &tls.Dialer{
+				NetDialer: netDialer,
+				Config:    tlsCfg,
+			}
+			conn, lastErr = tlsDialer.DialContext(ctx, "tcp", addr)
 		} else {
-			conn, lastErr = net.DialTimeout("tcp", addr, d.Timeout)
+			conn, lastErr = netDialer.DialContext(ctx, "tcp", addr)
 		}
 
 		if lastErr == nil {
@@ -87,9 +92,10 @@ func (d *Dialer) DialServer(ctx context.Context, domain string) (*transport.TCP,
 	}
 
 	var lastErr error
+	netDialer := &net.Dialer{Timeout: d.Timeout}
 	for _, rec := range records {
 		addr := net.JoinHostPort(rec.Target, fmt.Sprintf("%d", rec.Port))
-		conn, dialErr := net.DialTimeout("tcp", addr, d.Timeout)
+		conn, dialErr := netDialer.DialContext(ctx, "tcp", addr)
 		if dialErr == nil {
 			return transport.NewTCP(conn), nil
 		}

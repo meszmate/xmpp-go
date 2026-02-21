@@ -70,6 +70,20 @@ func TestNewIQ(t *testing.T) {
 	}
 }
 
+func TestIQMarshalOmitsEmptyJIDAttrs(t *testing.T) {
+	t.Parallel()
+
+	iq := NewIQ(IQSet)
+	out, err := xml.Marshal(iq)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	s := string(out)
+	if strings.Contains(s, `from=""`) || strings.Contains(s, `to=""`) {
+		t.Fatalf("empty from/to attrs must be omitted, got: %s", s)
+	}
+}
+
 func TestIQResultIQ(t *testing.T) {
 	t.Parallel()
 	iq := NewIQ(IQGet)
