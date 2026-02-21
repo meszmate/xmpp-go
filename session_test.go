@@ -3,6 +3,7 @@ package xmpp
 import (
 	"context"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/meszmate/xmpp-go/jid"
@@ -61,6 +62,41 @@ func TestSessionStateSetState(t *testing.T) {
 	// StateSecure should still be set
 	if s.State()&StateSecure == 0 {
 		t.Error("StateSecure should still be set after adding StateAuthenticated")
+	}
+}
+
+func TestSessionSetStateConcurrentDoesNotLoseFlags(t *testing.T) {
+	t.Parallel()
+	s, c2 := newTestSession(t)
+	defer s.Close()
+	defer c2.Close()
+
+	const attempts = 200
+	for i := 0; i < attempts; i++ {
+		s.state.Store(0)
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			<-start
+			s.SetState(StateSecure)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			s.SetState(StateAuthenticated)
+		}()
+
+		close(start)
+		wg.Wait()
+
+		got := s.State()
+		if got&StateSecure == 0 || got&StateAuthenticated == 0 {
+			t.Fatalf("lost state bits in concurrent SetState: got=%v", got)
+		}
 	}
 }
 

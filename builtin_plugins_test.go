@@ -40,7 +40,6 @@ import (
 	"github.com/meszmate/xmpp-go/plugins/push"
 	"github.com/meszmate/xmpp-go/plugins/reactions"
 	"github.com/meszmate/xmpp-go/plugins/receipts"
-	"github.com/meszmate/xmpp-go/plugins/register"
 	"github.com/meszmate/xmpp-go/plugins/retraction"
 	"github.com/meszmate/xmpp-go/plugins/roster"
 	"github.com/meszmate/xmpp-go/plugins/rsm"
@@ -94,7 +93,6 @@ func TestBuiltinPluginsInitializeAndClose(t *testing.T) {
 		push.New(),
 		reactions.New(),
 		receipts.New(),
-		register.New(),
 		retraction.New(),
 		roster.New(),
 		rsm.New(),

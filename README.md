@@ -59,6 +59,59 @@ func main() {
 }
 ```
 
+## In-Band Registration (XEP-0077)
+
+`xmpp-go` provides a standalone registration flow in `plugins/register` for account creation before authentication.
+The helper functions automatically handle stream setup, STARTTLS upgrade, classic register fields, and data-form registration.
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/meszmate/xmpp-go/plugins/register"
+)
+
+func main() {
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    form, err := register.FetchRegistrationForm(ctx, "example.com", 5222)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fields := map[string]string{
+        "username": "newuser",
+        "password": "strong-password",
+        "email":    "newuser@example.com",
+    }
+
+    result, err := register.SubmitRegistration(
+        ctx,
+        "example.com",
+        5222,
+        fields,
+        form.IsDataForm,
+        form.FormType,
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    if !result.Success {
+        log.Fatal(result.Error)
+    }
+
+    fmt.Println("Registered JID:", result.JID)
+}
+```
+
+For data-form registration, include all required fields from the fetched form in `fields` (including hidden fields and CAPTCHA answers when requested).
+
 ## Feature Checklist
 
 ### Core (RFC 6120/6121/7622)

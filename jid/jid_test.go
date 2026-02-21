@@ -1,6 +1,7 @@
 package jid
 
 import (
+	"encoding/xml"
 	"strings"
 	"testing"
 )
@@ -272,5 +273,44 @@ func TestEscapeRoundtrip(t *testing.T) {
 		if got != s {
 			t.Errorf("roundtrip(%q) = %q", s, got)
 		}
+	}
+}
+
+func TestMarshalXMLAttrOmitsZeroJID(t *testing.T) {
+	t.Parallel()
+
+	type holder struct {
+		XMLName xml.Name `xml:"stanza"`
+		From    JID      `xml:"from,attr,omitempty"`
+		To      JID      `xml:"to,attr,omitempty"`
+	}
+
+	out, err := xml.Marshal(holder{})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	s := string(out)
+	if strings.Contains(s, `from=""`) || strings.Contains(s, `to=""`) {
+		t.Fatalf("zero JID attrs must be omitted, got: %s", s)
+	}
+}
+
+func TestMarshalXMLAttrIncludesNonZeroJID(t *testing.T) {
+	t.Parallel()
+
+	j := MustParse("alice@example.com/res")
+
+	type holder struct {
+		XMLName xml.Name `xml:"stanza"`
+		From    JID      `xml:"from,attr,omitempty"`
+	}
+
+	out, err := xml.Marshal(holder{From: j})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `from="alice@example.com/res"`) {
+		t.Fatalf("expected serialized JID attr, got: %s", s)
 	}
 }

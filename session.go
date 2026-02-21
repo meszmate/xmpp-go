@@ -19,11 +19,11 @@ type SessionState uint32
 
 const (
 	StateSecure        SessionState = 1 << iota // TLS negotiated
-	StateAuthenticated                           // SASL complete
-	StateBound                                   // Resource bound
-	StateReady                                   // Fully negotiated
-	StateServer                                  // Server role
-	StateS2S                                     // Server-to-server
+	StateAuthenticated                          // SASL complete
+	StateBound                                  // Resource bound
+	StateReady                                  // Fully negotiated
+	StateServer                                 // Server role
+	StateS2S                                    // Server-to-server
 )
 
 // Session represents an XMPP session (client or server).
@@ -190,7 +190,13 @@ func (s *Session) State() SessionState {
 
 // SetState sets session state flags.
 func (s *Session) SetState(state SessionState) {
-	s.state.Store(uint32(s.State() | state))
+	for {
+		cur := s.state.Load()
+		next := cur | uint32(state)
+		if s.state.CompareAndSwap(cur, next) {
+			return
+		}
+	}
 }
 
 // LocalAddr returns the local JID.

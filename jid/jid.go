@@ -3,18 +3,19 @@
 package jid
 
 import (
+	"encoding/xml"
 	"errors"
 	"strings"
 	"unicode/utf8"
 )
 
 var (
-	ErrEmptyJID     = errors.New("jid: empty JID")
-	ErrInvalidJID   = errors.New("jid: invalid JID format")
-	ErrInvalidLocal = errors.New("jid: invalid localpart")
-	ErrInvalidDomain = errors.New("jid: invalid domainpart")
+	ErrEmptyJID        = errors.New("jid: empty JID")
+	ErrInvalidJID      = errors.New("jid: invalid JID format")
+	ErrInvalidLocal    = errors.New("jid: invalid localpart")
+	ErrInvalidDomain   = errors.New("jid: invalid domainpart")
 	ErrInvalidResource = errors.New("jid: invalid resourcepart")
-	ErrTooLong      = errors.New("jid: part exceeds maximum length")
+	ErrTooLong         = errors.New("jid: part exceeds maximum length")
 )
 
 const maxPartLen = 1023
@@ -152,6 +153,15 @@ func (j JID) WithResource(resource string) JID {
 // MarshalText implements encoding.TextMarshaler.
 func (j JID) MarshalText() ([]byte, error) {
 	return []byte(j.String()), nil
+}
+
+// MarshalXMLAttr implements xml.MarshalerAttr.
+// Returning an empty name omits the attribute entirely for zero JIDs.
+func (j JID) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
+	if j.IsZero() {
+		return xml.Attr{}, nil
+	}
+	return xml.Attr{Name: name, Value: j.String()}, nil
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
