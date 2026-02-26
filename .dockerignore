@@ -1,0 +1,10 @@
+.git
+.github
+.vscode
+.idea
+*.md
+*.log
+docs/
+**/*_test.go
+**/testdata/
+docker-compose*.yml
