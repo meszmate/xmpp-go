@@ -176,7 +176,7 @@ func (h *registrationHandler) handleSet(ctx context.Context, session *xmpp.Sessi
 		return session.Send(ctx, iq.ErrorIQ(stanza.NewStanzaError(stanza.ErrorTypeCancel, stanza.ErrorConflict, "user already exists")))
 	}
 
-	salt, iters, storedKey, serverKey, err := storage.HashPasswordSCRAMSHA256(password, h.cfg.Iterations)
+	salt, iters, storedKey, serverKey, err := hashPasswordSCRAMSHA256(password, h.cfg.Iterations)
 	if err != nil {
 		return session.Send(ctx, iq.ErrorIQ(stanza.NewStanzaError(stanza.ErrorTypeWait, stanza.ErrorInternalServerError, "password hashing failed")))
 	}
