@@ -20,6 +20,53 @@ A comprehensive, production-grade XMPP library for Go supporting both client and
 go get github.com/meszmate/xmpp-go
 ```
 
+## Docker / Compose
+
+This repo ships a ready-to-run server binary in `cmd/xmppd` with Docker and Compose support.
+
+Quick start (self-signed TLS, file storage, default accounts):
+
+```bash
+docker compose --profile xmpp up --build
+```
+
+The default config lives in `docker/xmppd.env`. Common overrides:
+
+- `XMPP_DOMAIN` (default `example.com`)
+- `XMPP_STORAGE` (`file|sqlite|postgres|mysql|mongodb|redis|memory`)
+- `XMPP_STORAGE_DSN` (for DB backends)
+- `XMPP_PLUGINS` (comma list or `all`)
+- `XMPP_DEFAULT_ACCOUNTS` (`user:pass,user2:pass`)
+- `XMPP_TLS_SELF_SIGNED=true` (auto-generate certs)
+
+Server-side XEP-0077 registration is supported and configurable via:
+- `XMPP_REGISTRATION_POLICY` (`open|closed|invite|admin`)
+- `XMPP_REGISTRATION_FIELDS` (comma list, e.g. `username,password,email`)
+- `XMPP_REGISTRATION_INVITES` (comma list of invite tokens)
+- `XMPP_REGISTRATION_ADMIN_TOKENS` (comma list)
+- `XMPP_REGISTRATION_RATE_LIMIT` (requests per window)
+- `XMPP_REGISTRATION_RATE_WINDOW` (Go duration, e.g. `1m`)
+- `XMPP_REGISTRATION_SCRAM_ITERATIONS` (default `4096`)
+- `XMPP_REGISTRATION_DATAFORM` (`true|false`)
+
+To use a database, enable the matching profile and set `XMPP_STORAGE` + `XMPP_STORAGE_DSN`:
+
+```bash
+docker compose --profile xmpp --profile postgres up --build
+```
+
+GHCR image publishing is wired via `.github/workflows/docker.yml` and publishes to `ghcr.io/meszmate/xmpp-go`.
+
+CI notes:
+- No GoReleaser is used. Docker publishing is handled by GitHub Actions and pushes to GHCR on `main` and tags.
+- `docker-compose.yml` uses `ghcr.io/meszmate/xmpp-go:latest` by default.
+
+Pull from GHCR (after CI pushes):
+
+```bash
+docker pull ghcr.io/meszmate/xmpp-go:latest
+```
+
 ## Quick Start
 
 ```go
