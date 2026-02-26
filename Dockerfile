@@ -1,11 +1,9 @@
 FROM golang:1.25-bookworm AS build
 
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-
 COPY . .
-RUN CGO_ENABLED=1 GOOS=linux go build -o /out/xmppd ./cmd/xmppd
+RUN cd cmd/xmppd && go mod download
+RUN cd cmd/xmppd && CGO_ENABLED=1 GOOS=linux go build -o /out/xmppd .
 
 FROM debian:bookworm-slim
 

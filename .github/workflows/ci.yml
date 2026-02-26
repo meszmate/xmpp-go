@@ -19,6 +19,7 @@ jobs:
           - storage/postgres
           - storage/redis
           - storage/sqlite
+          - cmd/xmppd
     steps:
       - uses: actions/checkout@v4
 
