@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -54,25 +55,16 @@ func main() {
 		log.Fatalf("storage: %v", err)
 	}
 
-	if store != nil {
-		if err := store.Init(ctx); err != nil {
-			log.Fatalf("storage init: %v", err)
-		}
-		if err := seedDefaultAccounts(ctx, store, cfg.DefaultAccounts); err != nil {
-			log.Fatalf("seed accounts: %v", err)
-		}
-	}
-
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
 		log.Fatalf("plugins: %v", err)
 	}
 
+	var seedOnce sync.Once
+	var seedErr error
+
 	opts := []xmpp.ServerOption{
 		xmpp.WithServerAddr(cfg.Addr),
-	}
-	if cfg.TLSCert != "" && cfg.TLSKey != "" {
-		opts = append(opts, xmpp.WithServerTLS(cfg.TLSCert, cfg.TLSKey))
 	}
 	if store != nil {
 		opts = append(opts, xmpp.WithServerStorage(store))
@@ -81,6 +73,19 @@ func main() {
 		opts = append(opts, xmpp.WithServerPlugins(plugins...))
 	}
 	opts = append(opts, xmpp.WithServerSessionHandler(func(ctx context.Context, session *xmpp.Session) {
+		seedOnce.Do(func() {
+			if store == nil {
+				return
+			}
+			if err := seedDefaultAccounts(ctx, store, cfg.DefaultAccounts); err != nil {
+				seedErr = err
+			}
+		})
+		if seedErr != nil {
+			log.Printf("seed accounts: %v", seedErr)
+			_ = session.Close()
+			return
+		}
 		serveSession(ctx, session, cfg, store)
 	}))
 

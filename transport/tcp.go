@@ -39,10 +39,21 @@ func (t *TCP) StartTLS(config *tls.Config) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	tlsConn := tls.Client(t.conn, config)
+	if config == nil {
+		config = &tls.Config{}
+	}
+
+	var tlsConn *tls.Conn
+	if len(config.Certificates) > 0 || config.GetCertificate != nil || config.GetConfigForClient != nil {
+		tlsConn = tls.Server(t.conn, config)
+	} else {
+		tlsConn = tls.Client(t.conn, config)
+	}
+
 	if err := tlsConn.Handshake(); err != nil {
 		return err
 	}
+
 	t.conn = tlsConn
 	t.tls = true
 	return nil
