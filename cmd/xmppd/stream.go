@@ -17,6 +17,7 @@ import (
 	"github.com/meszmate/xmpp-go/jid"
 	"github.com/meszmate/xmpp-go/stanza"
 	"github.com/meszmate/xmpp-go/storage"
+	"github.com/meszmate/xmpp-go/stream"
 	xmppxml "github.com/meszmate/xmpp-go/xml"
 )
 
@@ -448,6 +449,14 @@ func sendSASLFailure(ctx context.Context, session *xmpp.Session, condition strin
 	return session.SendRaw(ctx, strings.NewReader(xmlPayload))
 }
 
+func randomStreamID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "stream-" + randomResource()
+	}
+	return hex.EncodeToString(b)
+}
+
 func randomResource() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
@@ -471,16 +480,20 @@ func buildTLSConfig(cfg Config) (*tls.Config, error) {
 }
 
 func writeStreamStart(writer *xmppxml.StreamWriter, domain string) error {
-	start := xml.StartElement{
-		Name: xml.Name{Space: ns.Stream, Local: "stream"},
-		Attr: []xml.Attr{
-			{Name: xml.Name{Local: "xmlns"}, Value: ns.Client},
-			{Name: xml.Name{Local: "xmlns:stream"}, Value: ns.Stream},
-			{Name: xml.Name{Local: "from"}, Value: domain},
-			{Name: xml.Name{Local: "version"}, Value: "1.0"},
-		},
+	from, err := jid.New("", domain, "")
+	if err != nil {
+		return err
 	}
-	return writer.EncodeToken(start)
+
+	header := stream.Open(stream.Header{
+		From:    from,
+		ID:      randomStreamID(),
+		Lang:    "en",
+		Version: stream.DefaultVersion,
+		NS:      ns.Client,
+	})
+	_, err = writer.WriteRaw(header)
+	return err
 }
 
 func writeStreamFeatures(writer *xmppxml.StreamWriter, cfg Config, state xmpp.SessionState, tlsConfig *tls.Config) error {
