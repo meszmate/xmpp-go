@@ -182,8 +182,9 @@ func (h *registrationHandler) handleSet(ctx context.Context, session *xmpp.Sessi
 	}
 
 	user := &storage.User{
-		Username:   username,
-		Password:   "",
+		Username: username,
+		// Keep plaintext populated for backends that still use UserStore.Authenticate.
+		Password:   password,
 		Salt:       salt,
 		Iterations: iters,
 		StoredKey:  storedKey,
