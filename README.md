@@ -1,6 +1,57 @@
 # xmpp-go
 
-A comprehensive, production-grade XMPP library for Go supporting both client and server roles with a plugin architecture covering 50+ XEPs.
+An XMPP library for Go supporting both client and server roles, with a plugin
+architecture and building blocks for 50+ XEPs.
+
+## Project status
+
+The **client and server work end to end and are covered by integration tests**
+(real client ↔ real server over TCP, WebSocket, and BOSH):
+
+- **Connection**: full stream negotiation over TCP (`<stream:stream>`),
+  WebSocket (RFC 7395 `<open/>` framing), and BOSH (XEP-0124/0206 HTTP
+  long-polling, `Client.WithBOSH` + `Server.BOSHHandler`), plus STARTTLS and
+  resource binding.
+- **Authentication**: SASL SCRAM-SHA-1/256/512 and their **`-PLUS`
+  channel-binding** variants (client and server; `tls-server-end-point`,
+  RFC 5929, negotiated automatically over TLS), PLAIN (refused over cleartext
+  unless explicitly overridden), ANONYMOUS, and EXTERNAL on **both** sides — the
+  server maps a verified TLS client certificate to a local identity
+  (`WithServerClientCertAuth`). Auth failures surface as a typed `*AuthError`.
+- **Federation (s2s)**: server-to-server streams authenticated with XEP-0220
+  Server Dialback (`WithServerS2S`); stanzas to remote domains are routed over
+  authenticated s2s streams, and inbound s2s streams are verified via a
+  dialback callback to the originating server.
+- **Routing & services**: message/presence/IQ routing; service IQs for
+  disco#info/#items, XEP-0199 ping, XEP-0092 version, and RFC 6121 roster
+  get/set; clients auto-answer pings.
+- **Presence (RFC 6121)**: the subscribe/subscribed/unsubscribe state machine
+  with roster updates, roster pushes, and presence broadcast to subscribed
+  contacts.
+- **Plugins**: an inbound-handler framework routes incoming stanzas to plugins
+  by payload namespace. On the client the disco, ping, version, and roster
+  plugins respond to and issue requests (`Client.SendIQ`). On the server,
+  `WithServerPluginFactory` gives each session its own plugin instances with
+  inbound IQ dispatch.
+- **Stream Management (XEP-0198)**: `enable`/`enabled`, inbound counting, `r`/`a`
+  acknowledgement (delivery confirmation via `Session.RequestSMAck`), **and
+  resumption** — a dropped session is parked for a resumption window, stanzas
+  addressed to it are buffered, and `Client.Resume` restores the bound resource
+  and replays unacknowledged stanzas.
+- **BOSH robustness (XEP-0124)**: request acknowledgements (`ack`),
+  retransmission recovery via a per-`rid` response cache (§14.2), pipelined
+  requests with forward-gap ordering, and hold-release so a send is never
+  stalled behind an idle long-poll. The bundled client keeps a concurrent
+  long-poll (`requests='2'`) and retransmits failed requests.
+- **JIDs**: RFC 7622 normalization — IDNA A-labels for domains, PRECIS
+  UsernameCaseMapped localparts, OpaqueString resources. Stanza extensions
+  round-trip without corruption.
+
+The core RFCs (6120/6121/7622), all three transports (TCP, WebSocket, BOSH),
+the full SASL mechanism set, Stream Management with resumption, and s2s
+dialback federation are implemented and integration-tested. Higher-level XEPs
+beyond the core (MUC, PubSub, MAM, OMEMO, Jingle, …) are provided as plugin
+building blocks under `plugins/`; see the feature checklist below.
 
 ## Features
 

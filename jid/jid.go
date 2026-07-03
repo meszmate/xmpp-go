@@ -5,8 +5,11 @@ package jid
 import (
 	"encoding/xml"
 	"errors"
+	"net"
 	"strings"
-	"unicode/utf8"
+
+	"golang.org/x/net/idna"
+	"golang.org/x/text/secure/precis"
 )
 
 var (
@@ -27,27 +30,69 @@ type JID struct {
 	resource string
 }
 
-// New creates a new JID from its parts.
+// New creates a new JID from its parts, applying RFC 7622 normalization:
+//
+//   - domainpart: IDNA A-label conversion (and lowercasing), so user@EXAMPLE.COM
+//     and user@example.com — and user@münchen.de and its punycode form — compare
+//     and route as equal. IP literals are passed through.
+//   - localpart: PRECIS UsernameCaseMapped (case-folded, disallowed characters
+//     rejected), so Alice and alice are the same account.
+//   - resourcepart: PRECIS OpaqueString (case-preserved, control characters
+//     rejected).
 func New(local, domain, resource string) (JID, error) {
 	if domain == "" {
 		return JID{}, ErrInvalidDomain
 	}
-	if len(local) > maxPartLen {
-		return JID{}, ErrTooLong
-	}
-	if len(domain) > maxPartLen {
-		return JID{}, ErrTooLong
-	}
-	if len(resource) > maxPartLen {
-		return JID{}, ErrTooLong
-	}
-	if local != "" && !validLocal(local) {
-		return JID{}, ErrInvalidLocal
-	}
-	if !validDomain(domain) {
+	nd, err := normalizeDomain(domain)
+	if err != nil {
 		return JID{}, ErrInvalidDomain
 	}
+	domain = nd
+
+	if local != "" {
+		nl, err := precis.UsernameCaseMapped.String(local)
+		if err != nil {
+			return JID{}, ErrInvalidLocal
+		}
+		// RFC 7622 §3.3.1 forbids these code points in the localpart, on top of
+		// the PRECIS IdentifierClass (which permits them as ordinary punctuation).
+		if strings.ContainsAny(nl, `"&'/:<>@`) {
+			return JID{}, ErrInvalidLocal
+		}
+		local = nl
+	}
+	if resource != "" {
+		nr, err := precis.OpaqueString.String(resource)
+		if err != nil {
+			return JID{}, ErrInvalidResource
+		}
+		resource = nr
+	}
+
+	if len(local) > maxPartLen || len(domain) > maxPartLen || len(resource) > maxPartLen {
+		return JID{}, ErrTooLong
+	}
 	return JID{local: local, domain: domain, resource: resource}, nil
+}
+
+// normalizeDomain converts a domainpart to its canonical form: an IDNA A-label
+// (lowercased) for DNS names, or a validated IP literal.
+func normalizeDomain(s string) (string, error) {
+	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
+		inner := s[1 : len(s)-1]
+		if net.ParseIP(inner) == nil {
+			return "", ErrInvalidDomain
+		}
+		return "[" + strings.ToLower(inner) + "]", nil
+	}
+	if net.ParseIP(s) != nil {
+		return s, nil
+	}
+	a, err := idna.Lookup.ToASCII(s)
+	if err != nil || a == "" {
+		return "", ErrInvalidDomain
+	}
+	return a, nil
 }
 
 // Parse parses a JID string into a JID.
@@ -62,6 +107,11 @@ func Parse(s string) (JID, error) {
 	if slashIdx := strings.IndexByte(s, '/'); slashIdx != -1 {
 		resource = s[slashIdx+1:]
 		s = s[:slashIdx]
+		// A trailing slash with no resourcepart is invalid (RFC 7622 §3.1);
+		// an empty resource must not be silently coerced to a bare JID.
+		if resource == "" {
+			return JID{}, ErrInvalidResource
+		}
 	}
 
 	// Extract local and domain
@@ -209,38 +259,4 @@ func EscapeLocal(s string) string {
 // UnescapeLocal unescapes a localpart per XEP-0106.
 func UnescapeLocal(s string) string {
 	return unescapeReplacer.Replace(s)
-}
-
-func validLocal(s string) bool {
-	if s == "" {
-		return true
-	}
-	if !utf8.ValidString(s) {
-		return false
-	}
-	for _, r := range s {
-		if r == '@' || r == '/' {
-			return false
-		}
-	}
-	return true
-}
-
-func validDomain(s string) bool {
-	if s == "" {
-		return false
-	}
-	if !utf8.ValidString(s) {
-		return false
-	}
-	// Allow IP addresses in brackets
-	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
-		return true
-	}
-	for _, r := range s {
-		if r == '@' || r == '/' {
-			return false
-		}
-	}
-	return true
 }

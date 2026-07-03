@@ -40,6 +40,29 @@ func GenerateID() string {
 // Extension represents an arbitrary XML extension element in a stanza.
 type Extension struct {
 	XMLName xml.Name
-	Inner   []byte `xml:",innerxml"`
+	Inner   []byte     `xml:",innerxml"`
 	Attrs   []xml.Attr `xml:",any,attr"`
+}
+
+// UnmarshalXML captures the element while dropping namespace-declaration
+// attributes (xmlns / xmlns:*). Those are redundant with XMLName.Space, and if
+// retained they are re-emitted on marshal alongside the namespace derived from
+// XMLName.Space, producing malformed elements with duplicate xmlns attributes.
+func (e *Extension) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
+	var body struct {
+		Inner []byte `xml:",innerxml"`
+	}
+	if err := dec.DecodeElement(&body, &start); err != nil {
+		return err
+	}
+	e.XMLName = start.Name
+	e.Inner = body.Inner
+	e.Attrs = e.Attrs[:0]
+	for _, a := range start.Attr {
+		if a.Name.Local == "xmlns" || a.Name.Space == "xmlns" {
+			continue
+		}
+		e.Attrs = append(e.Attrs, a)
+	}
+	return nil
 }

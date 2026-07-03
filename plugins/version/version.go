@@ -8,6 +8,7 @@ import (
 
 	"github.com/meszmate/xmpp-go/internal/ns"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/stanza"
 )
 
 const Name = "version"
@@ -42,7 +43,21 @@ func (p *Plugin) Version() string { return "1.0.0" }
 
 func (p *Plugin) Initialize(_ context.Context, params plugin.InitParams) error {
 	p.params = params
+	if params.Handle != nil {
+		params.Handle(xml.Name{Space: ns.Version, Local: "query"}, "", p.handle)
+	}
 	return nil
+}
+
+// handle answers a XEP-0092 software version query.
+func (p *Plugin) handle(ctx context.Context, st stanza.Stanza) error {
+	iq, ok := st.(*stanza.IQ)
+	if !ok || iq.Type != stanza.IQGet {
+		return nil
+	}
+	info := p.info
+	res := stanza.IQ{Header: stanza.Header{ID: iq.ID, Type: stanza.IQResult, To: iq.From}}
+	return p.params.SendElement(ctx, &stanza.IQPayload{IQ: res, Payload: &info})
 }
 
 func (p *Plugin) Close() error           { return nil }

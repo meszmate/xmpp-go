@@ -11,7 +11,13 @@ import (
 	"time"
 )
 
-// BOSH implements Transport over BOSH (XEP-0124/0206).
+// BOSH is a low-level HTTP byte-shuttle primitive: each Write POSTs the bytes
+// and buffers the response for Read. It does not implement BOSH session
+// framing (rid/sid, <body/> wrapping, long-polling) on its own.
+//
+// For a complete, working client-side XMPP-over-BOSH (XEP-0124/0206) transport
+// wired into the client, use BOSHClient (see DialBOSHClient and the client's
+// WithBOSH option); the server side is provided by Server.BOSHHandler.
 type BOSH struct {
 	mu       sync.Mutex
 	url      string

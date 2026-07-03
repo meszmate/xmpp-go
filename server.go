@@ -3,6 +3,7 @@ package xmpp
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"sync"
 
@@ -13,21 +14,36 @@ import (
 
 // Server is a high-level XMPP server.
 type Server struct {
-	mu       sync.Mutex
-	domain   string
-	listener net.Listener
-	sessions map[string]*Session
-	plugins  *plugin.Manager
-	opts     serverOptions
-	closed   chan struct{}
+	mu                sync.Mutex
+	domain            string
+	listener          net.Listener
+	sessions          map[string]*Session
+	sessionPlugins    map[*Session]*plugin.Manager
+	detached          map[string]*detachedEntry
+	boshConns         map[string]*boshConn
+	router            *localRouter
+	tlsConfig         *tls.Config
+	tlsServerEndpoint []byte // RFC 5929 tls-server-end-point CB for SCRAM-*-PLUS
+	plugins           *plugin.Manager
+	opts              serverOptions
+	closed            chan struct{}
+
+	s2sMu  sync.Mutex
+	s2sOut map[string]*s2sOutbound
 }
 
 // NewServer creates a new XMPP server.
 func NewServer(domain string, opts ...ServerOption) (*Server, error) {
+	if domain == "" {
+		return nil, errors.New("xmpp: server domain must not be empty")
+	}
 	s := &Server{
-		domain:   domain,
-		sessions: make(map[string]*Session),
-		closed:   make(chan struct{}),
+		domain:         domain,
+		sessions:       make(map[string]*Session),
+		sessionPlugins: make(map[*Session]*plugin.Manager),
+		detached:       make(map[string]*detachedEntry),
+		router:         newLocalRouter(),
+		closed:         make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -61,10 +77,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			}
 		}
 		params := plugin.InitParams{
-			State:    func() uint32 { return uint32(StateServer) },
-			LocalJID: func() string { return s.domain },
+			State:     func() uint32 { return uint32(StateServer) },
+			LocalJID:  func() string { return s.domain },
 			RemoteJID: func() string { return "" },
-			Storage:  s.opts.storage,
+			Storage:   s.opts.storage,
 		}
 		if err := mgr.Initialize(ctx, params); err != nil {
 			return err
@@ -80,7 +96,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	var listener net.Listener
 	var err error
 
-	if s.opts.tlsCert != "" && s.opts.tlsKey != "" {
+	if s.opts.sessionHandler != nil && s.opts.tlsCert != "" && s.opts.tlsKey != "" {
+		// Custom session handler with an implicit-TLS listener (legacy behavior:
+		// the handler owns all negotiation).
 		cert, certErr := tls.LoadX509KeyPair(s.opts.tlsCert, s.opts.tlsKey)
 		if certErr != nil {
 			return certErr
@@ -88,6 +106,14 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 		listener, err = tls.Listen("tcp", addr, tlsConfig)
 	} else {
+		// Library-managed negotiation: listen on plain TCP and, when a
+		// certificate is configured, offer STARTTLS to upgrade in-stream.
+		if tlsCfg, tlsErr := s.buildServerTLS(); tlsErr != nil {
+			return tlsErr
+		} else {
+			s.tlsConfig = tlsCfg
+			s.tlsServerEndpoint = serverEndpointFromTLS(tlsCfg)
+		}
 		listener, err = net.Listen("tcp", addr)
 	}
 
@@ -100,6 +126,40 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.mu.Unlock()
 
 	return s.serve(ctx, listener)
+}
+
+// buildServerTLS assembles the STARTTLS server configuration from the explicit
+// tls.Config (WithServerTLSConfig) or a certificate/key pair (WithServerTLS),
+// layering in client-certificate verification when SASL EXTERNAL is enabled.
+// It returns nil (no error) when no TLS is configured.
+func (s *Server) buildServerTLS() (*tls.Config, error) {
+	var cfg *tls.Config
+	switch {
+	case s.opts.tlsConfig != nil:
+		cfg = s.opts.tlsConfig.Clone()
+	case s.opts.tlsCert != "" && s.opts.tlsKey != "":
+		cert, err := tls.LoadX509KeyPair(s.opts.tlsCert, s.opts.tlsKey)
+		if err != nil {
+			return nil, err
+		}
+		cfg = &tls.Config{Certificates: []tls.Certificate{cert}}
+	default:
+		return nil, nil
+	}
+	if cfg.MinVersion == 0 {
+		cfg.MinVersion = tls.VersionTLS12
+	}
+	// Enable SASL EXTERNAL: request (but do not force) a client certificate and
+	// verify any presented certificate against the configured CA pool.
+	if s.opts.externalAuth != nil {
+		if cfg.ClientCAs == nil {
+			cfg.ClientCAs = s.opts.clientCAs
+		}
+		if cfg.ClientAuth == tls.NoClientCert {
+			cfg.ClientAuth = tls.VerifyClientCertIfGiven
+		}
+	}
+	return cfg, nil
 }
 
 func (s *Server) serve(ctx context.Context, listener net.Listener) error {
@@ -138,6 +198,11 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 
+	// An implicit-TLS listener yields an already-secure transport.
+	if _, secure := trans.ConnectionState(); secure {
+		session.SetState(StateSecure)
+	}
+
 	s.mu.Lock()
 	s.sessions[conn.RemoteAddr().String()] = session
 	s.mu.Unlock()
@@ -151,7 +216,11 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	if s.opts.sessionHandler != nil {
 		s.opts.sessionHandler(ctx, session)
+		return
 	}
+
+	// No custom handler: run the library's built-in negotiation and routing.
+	s.negotiateAndServe(ctx, session)
 }
 
 // Close stops the server.
@@ -210,6 +279,17 @@ func (s *Server) Plugin(name string) (plugin.Plugin, bool) {
 // Domain returns the server domain.
 func (s *Server) Domain() string {
 	return s.domain
+}
+
+// Addr returns the address the server is listening on, or nil if it is not yet
+// listening.
+func (s *Server) Addr() net.Addr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
 }
 
 // SessionCount returns the number of active sessions.

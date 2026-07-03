@@ -66,20 +66,47 @@ func (m *Mux) SetFallback(h Handler) {
 }
 
 // HandleStanza routes a stanza to the appropriate handler.
+//
+// A route's name is matched against the stanza element name (message, presence,
+// iq) and, for IQ stanzas, against the IQ payload (child) element name. This
+// lets plugins register for a payload namespace such as urn:xmpp:ping without
+// caring that the wrapping element is <iq>.
 func (m *Mux) HandleStanza(ctx context.Context, session *Session, st stanza.Stanza) error {
+	if handled, err := m.dispatch(ctx, session, st); handled {
+		return err
+	}
+
+	m.mu.RLock()
+	fallback := m.fallback
+	m.mu.RUnlock()
+
+	if fallback != nil {
+		return fallback.HandleStanza(ctx, session, st)
+	}
+	return nil
+}
+
+// dispatch routes a stanza to the first matching registered route, reporting
+// whether any route matched. Unlike HandleStanza it does not consult the
+// fallback handler, so callers can distinguish "a route handled it" from "no
+// route matched" — used by the server to try plugin routes before falling back
+// to built-in service handling or routing.
+func (m *Mux) dispatch(ctx context.Context, session *Session, st stanza.Stanza) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	header := st.GetHeader()
 
+	var payload xml.Name
+	if iq, ok := st.(*stanza.IQ); ok {
+		payload = iqPayloadName(iq)
+	}
+
 	for _, r := range m.routes {
 		if r.stanzaType != "" && r.stanzaType != header.Type {
 			continue
 		}
-		if r.name.Local != "" && r.name.Local != header.XMLName.Local {
-			continue
-		}
-		if r.name.Space != "" && r.name.Space != header.XMLName.Space {
+		if !nameMatches(r.name, header.XMLName) && !nameMatches(r.name, payload) {
 			continue
 		}
 
@@ -88,14 +115,26 @@ func (m *Mux) HandleStanza(ctx context.Context, session *Session, st stanza.Stan
 		for i := len(m.middleware) - 1; i >= 0; i-- {
 			handler = m.middleware[i](handler)
 		}
-		return handler.HandleStanza(ctx, session, st)
+		return true, handler.HandleStanza(ctx, session, st)
 	}
 
-	if m.fallback != nil {
-		return m.fallback.HandleStanza(ctx, session, st)
-	}
+	return false, nil
+}
 
-	return nil
+// nameMatches reports whether a route name matches a target element name.
+// Empty fields on the route name act as wildcards; a fully-empty route name
+// matches anything.
+func nameMatches(routeName, target xml.Name) bool {
+	if routeName.Local == "" && routeName.Space == "" {
+		return true
+	}
+	if routeName.Local != "" && routeName.Local != target.Local {
+		return false
+	}
+	if routeName.Space != "" && routeName.Space != target.Space {
+		return false
+	}
+	return true
 }
 
 // WithRoute returns a MuxOption that registers a route.
