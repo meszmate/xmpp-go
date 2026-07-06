@@ -3,9 +3,14 @@ package plugin
 
 import (
 	"context"
+	"encoding/xml"
 
+	"github.com/meszmate/xmpp-go/stanza"
 	"github.com/meszmate/xmpp-go/storage"
 )
+
+// IncomingHandler processes an inbound stanza routed to a plugin.
+type IncomingHandler func(ctx context.Context, st stanza.Stanza) error
 
 // Plugin is the interface that all XMPP plugins must implement.
 type Plugin interface {
@@ -42,4 +47,12 @@ type InitParams struct {
 	Get func(name string) (Plugin, bool)
 	// Storage provides access to the pluggable storage layer. May be nil.
 	Storage storage.Storage
+	// Handle registers an inbound stanza handler. For IQ stanzas the name is
+	// matched against the payload (child) element; for message/presence it is
+	// matched against the stanza element. An empty name or stanzaType is a
+	// wildcard. May be nil when the host does not support inbound dispatch.
+	Handle func(name xml.Name, stanzaType string, h IncomingHandler)
+	// Request sends an IQ and waits for the correlated reply. May be nil when
+	// the host does not support request/response (e.g. a server session).
+	Request func(ctx context.Context, iq *stanza.IQ) (*stanza.IQ, error)
 }

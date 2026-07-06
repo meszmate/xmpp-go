@@ -7,7 +7,9 @@ import (
 	"sync"
 
 	"github.com/meszmate/xmpp-go/internal/ns"
+	"github.com/meszmate/xmpp-go/jid"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/stanza"
 )
 
 const Name = "disco"
@@ -74,11 +76,60 @@ func (p *Plugin) Version() string { return "1.0.0" }
 
 func (p *Plugin) Initialize(_ context.Context, params plugin.InitParams) error {
 	p.params = params
+	if params.Handle != nil {
+		params.Handle(xml.Name{Space: ns.DiscoInfo, Local: "query"}, "", p.handleInfo)
+		params.Handle(xml.Name{Space: ns.DiscoItems, Local: "query"}, "", p.handleItems)
+	}
 	return nil
 }
 
-func (p *Plugin) Close() error              { return nil }
-func (p *Plugin) Dependencies() []string    { return nil }
+// handleInfo answers a disco#info query with the configured identities/features.
+func (p *Plugin) handleInfo(ctx context.Context, st stanza.Stanza) error {
+	iq, ok := st.(*stanza.IQ)
+	if !ok || iq.Type != stanza.IQGet {
+		return nil
+	}
+	info := p.Info()
+	res := stanza.IQ{Header: stanza.Header{ID: iq.ID, Type: stanza.IQResult, To: iq.From}}
+	return p.params.SendElement(ctx, &stanza.IQPayload{IQ: res, Payload: &info})
+}
+
+// handleItems answers a disco#items query with the configured items.
+func (p *Plugin) handleItems(ctx context.Context, st stanza.Stanza) error {
+	iq, ok := st.(*stanza.IQ)
+	if !ok || iq.Type != stanza.IQGet {
+		return nil
+	}
+	items := p.Items()
+	res := stanza.IQ{Header: stanza.Header{ID: iq.ID, Type: stanza.IQResult, To: iq.From}}
+	return p.params.SendElement(ctx, &stanza.IQPayload{IQ: res, Payload: &items})
+}
+
+// QueryInfo sends a disco#info request to the target JID and returns its result.
+func (p *Plugin) QueryInfo(ctx context.Context, to string) (*InfoQuery, error) {
+	if p.params.Request == nil {
+		return nil, nil
+	}
+	req := stanza.NewIQ(stanza.IQGet)
+	if to != "" {
+		if j, err := jid.Parse(to); err == nil {
+			req.To = j
+		}
+	}
+	req.Query = []byte(`<query xmlns='http://jabber.org/protocol/disco#info'/>`)
+	res, err := p.params.Request(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	var info InfoQuery
+	if err := xml.Unmarshal(res.Query, &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+func (p *Plugin) Close() error           { return nil }
+func (p *Plugin) Dependencies() []string { return nil }
 
 // AddIdentity adds an identity to the disco response.
 func (p *Plugin) AddIdentity(identity Identity) {

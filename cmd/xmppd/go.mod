@@ -10,7 +10,7 @@ require (
 	github.com/meszmate/xmpp-go/storage/redis v0.0.0
 	github.com/meszmate/xmpp-go/storage/sqlite v0.0.0
 	github.com/redis/go-redis/v9 v9.9.0
-	golang.org/x/crypto v0.47.0
+	golang.org/x/crypto v0.53.0
 )
 
 require (
@@ -30,8 +30,9 @@ require (
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.2.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 )
 
 replace (

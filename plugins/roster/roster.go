@@ -8,6 +8,7 @@ import (
 
 	"github.com/meszmate/xmpp-go/internal/ns"
 	"github.com/meszmate/xmpp-go/plugin"
+	"github.com/meszmate/xmpp-go/stanza"
 	"github.com/meszmate/xmpp-go/storage"
 )
 
@@ -64,7 +65,58 @@ func (p *Plugin) Initialize(_ context.Context, params plugin.InitParams) error {
 	if p.store == nil {
 		p.items = make(map[string]Item)
 	}
+	// Handle server-initiated roster pushes (RFC 6121 §2.1.6).
+	if params.Handle != nil {
+		params.Handle(xml.Name{Space: ns.Roster, Local: "query"}, "", p.handlePush)
+	}
 	return nil
+}
+
+// handlePush applies a server roster push and acknowledges it.
+func (p *Plugin) handlePush(ctx context.Context, st stanza.Stanza) error {
+	iq, ok := st.(*stanza.IQ)
+	if !ok || iq.Type != stanza.IQSet {
+		return nil
+	}
+	var q Query
+	if err := xml.Unmarshal(iq.Query, &q); err != nil {
+		return nil
+	}
+	for _, it := range q.Items {
+		if it.Subscription == SubRemove {
+			_ = p.Remove(ctx, it.JID)
+			continue
+		}
+		_ = p.Set(ctx, it)
+	}
+	if p.params.SendElement != nil {
+		res := stanza.IQ{Header: stanza.Header{ID: iq.ID, Type: stanza.IQResult, To: iq.From}}
+		return p.params.SendElement(ctx, &stanza.IQPayload{IQ: res})
+	}
+	return nil
+}
+
+// Fetch retrieves the roster from the server (RFC 6121 §2.1.3) and caches it
+// locally. It requires a host that supplies InitParams.Request (an XMPP client);
+// otherwise it returns the locally-stored items.
+func (p *Plugin) Fetch(ctx context.Context) ([]Item, error) {
+	if p.params.Request == nil {
+		return p.Items(ctx)
+	}
+	req := stanza.NewIQ(stanza.IQGet)
+	req.Query = []byte(`<query xmlns='jabber:iq:roster'/>`)
+	res, err := p.params.Request(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	var q Query
+	if err := xml.Unmarshal(res.Query, &q); err != nil {
+		return nil, err
+	}
+	for _, it := range q.Items {
+		_ = p.Set(ctx, it)
+	}
+	return q.Items, nil
 }
 
 func (p *Plugin) Close() error           { return nil }

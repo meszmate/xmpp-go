@@ -4,18 +4,22 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+
+	"golang.org/x/net/websocket"
 )
 
-// WebSocket implements Transport over a WebSocket connection (RFC 7395).
-// This is a structural implementation; actual WebSocket I/O requires
-// a WebSocket library to be plugged in via the ReadWriteCloser.
+// WebSocket implements Transport over an RFC 7395 XMPP-over-WebSocket
+// connection. The XMPP stream is framed with <open/>/<close/> elements rather
+// than <stream:stream> (handled by the negotiation layer when framing is
+// enabled on the session).
 type WebSocket struct {
 	rwc  net.Conn
 	tls  bool
 	peer net.Addr
 }
 
-// NewWebSocket creates a new WebSocket transport.
+// NewWebSocket creates a new WebSocket transport over an established connection.
+// A *websocket.Conn (which implements net.Conn) is accepted directly.
 func NewWebSocket(conn net.Conn) *WebSocket {
 	_, isTLS := conn.(*tls.Conn)
 	return &WebSocket{
@@ -23,6 +27,22 @@ func NewWebSocket(conn net.Conn) *WebSocket {
 		tls:  isTLS,
 		peer: conn.RemoteAddr(),
 	}
+}
+
+// DialWebSocket connects to an XMPP WebSocket endpoint (ws:// or wss://) using
+// the "xmpp" subprotocol (RFC 7395) and returns a Transport.
+func DialWebSocket(url, origin string) (*WebSocket, error) {
+	cfg, err := websocket.NewConfig(url, origin)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Protocol = []string{"xmpp"}
+	conn, err := websocket.DialConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	conn.PayloadType = websocket.TextFrame
+	return NewWebSocket(conn), nil
 }
 
 // Read reads data from the WebSocket connection.
